@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Trading Progress Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      max-width: 1000px;
+      margin: auto;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .input-area {
+      flex: 1 1 35%;
+      min-width: 280px;
+    }
+    .chart-area {
+      flex: 1 1 60%;
+    }
+    .bar-container {
+      width: 100%;
+      height: 25px;
+      background: #eee;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+    }
+    .bar {
+      height: 100%;
+      transition: 0.3s;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 10px;
+    }
+    input, select {
+      padding: 6px;
+      width: 100%;
+      margin-top: 5px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .row > div, .row > span {
+      flex: 1;
+    }
+    #resultDisplay {
+      font-weight: bold;
+      text-align: center;
+      padding: 10px;
+      margin-top: 10px;
+      display: none;
+      border-radius: 5px;
+    }
+    #notifTarget {
+      font-weight: bold;
+      margin-top: 5px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h2>📈 Trading Progress Tracker</h2>
+
+<div class="container">
+  <div class="input-area">
+    <label for="tanggal">Tanggal:</label>
+    <input type="date" id="tanggal">
+
+    <label for="modalAwal">Modal Awal:</label>
+    <div class="row"><span>Rp</span><input type="number" id="modalAwal" /></div>
+
+    <label for="modal">Modal Sekarang (Manual):</label>
+    <div class="row"><span>Rp</span><input type="number" id="modal" oninput="updateTarget()" /></div>
+
+    <label for="target">Target (7% dari Modal):</label>
+    <input type="text" id="target" readonly />
+
+    <label for="targetLoss">Target Loss:</label>
+    <div class="row"><span>Rp</span><input type="number" id="targetLoss" /></div>
+
+    <div class="row">
+      <div>
+        <label for="nominal">Nominal:</label>
+        <div class="row"><span>Rp</span><input type="number" id="nominal" /></div>
+      </div>
+      <div>
+        <label for="persen">Persentase (%):</label>
+        <input type="number" id="persen" value="10" />
+      </div>
+    </div>
+
+    <div id="resultDisplay"></div>
+
+    <div>
+      <button onclick="submitStatus('untung')">✅ Untung</button>
+      <button onclick="submitStatus('rugi')">❌ Rugi</button>
+      <button onclick="clearData()">🗑️ Clear</button>
+      <button onclick="saveData()">💾 Simpan</button>
+    </div>
+
+    <label>🎯 Target Loading:</label>
+    <div class="bar-container">
+      <div id="progressBar" class="bar" style="width: 0%; background: green;"></div>
+    </div>
+    <div id="notifTarget"></div>
+  </div>
+
+  <div class="chart-area">
+    <canvas id="chart" style="width: 100%; height: 400px;"></canvas>
+  </div>
+</div>
+
+<script>
+  let totalProfit = 0;
+  let totalLoss = 0;
+  let history = [];
+
+  window.onload = () => {
+    document.getElementById('tanggal').valueAsDate = new Date();
+    document.getElementById('modalAwal').addEventListener('input', () => {
+      const modalAwal = parseFloat(document.getElementById('modalAwal').value || 0);
+      const modalInput = document.getElementById('modal');
+      if (!modalInput.value || modalInput.value == 0) {
+        modalInput.value = modalAwal;
+        updateTarget();
+      }
+    });
+    updateChart();
+  };
+
+  function formatRp(value) {
+    return `Rp${parseFloat(value).toLocaleString('id-ID')}`;
+  }
+
+  function updateTarget() {
+    const modal = parseFloat(document.getElementById('modal').value || 0);
+    const target = modal * 0.07;
+    document.getElementById('target').value = formatRp(target);
+  }
+
+  function submitStatus(status) {
+    const nominalInput = document.getElementById('nominal');
+    const nominal = parseFloat(nominalInput.value || 0);
+    const persen = parseFloat(document.getElementById('persen').value || 0);
+    const targetLossInput = parseFloat(document.getElementById('targetLoss').value || 0);
+    const resultDisplay = document.getElementById('resultDisplay');
+
+    if (!nominal || nominal <= 0) {
+      alert("⚠️ Masukkan nominal terlebih dahulu.");
+      return;
+    }
+
+    let result = 0;
+    if (status === 'rugi') {
+      result = nominal;
+      totalLoss += result;
+      nominalInput.placeholder = formatRp(nominal * 2);
+      resultDisplay.innerText = `-${formatRp(result)}`;
+      resultDisplay.style.background = '#ffcccc';
+      resultDisplay.style.color = 'red';
+    } else {
+      result = nominal * (persen / 100);
+      totalProfit += result;
+      resultDisplay.innerText = `+${formatRp(result)}`;
+      resultDisplay.style.background = '#ccffcc';
+      resultDisplay.style.color = 'green';
+    }
+    resultDisplay.style.display = 'block';
+
+    const netRecovery = totalProfit - totalLoss;
+    const progressBar = document.getElementById('progressBar');
+    let progressPercent = 0;
+    let barColor = 'green';
+
+    if (targetLossInput > 0) {
+      if (netRecovery >= targetLossInput) {
+        progressPercent = 100;
+        barColor = 'green';
+      } else if (netRecovery < 0) {
+        progressPercent = Math.min(100, Math.abs(netRecovery) / targetLossInput * 100);
+        barColor = 'red';
+      } else {
+        progressPercent = Math.min(100, netRecovery / targetLossInput * 100);
+        barColor = 'green';
+      }
+    }
+
+    progressBar.style.background = barColor;
+    progressBar.style.width = progressPercent + "%";
+
+    const label = new Date().toLocaleTimeString();
+    const value = status === 'untung' ? result : -result;
+    history.push({ label, value });
+    updateChart();
+
+    const notif = document.getElementById('notifTarget');
+    notif.innerText = `Total target tercapai: ${formatRp(netRecovery)} / ${formatRp(targetLossInput)}`;
+    notif.style.color = (netRecovery >= targetLossInput) ? 'green' : 'red';
+    notif.style.display = 'block';
+    setTimeout(() => notif.style.display = 'none', 2000);
+  }
+
+  function clearData() {
+    totalProfit = 0;
+    totalLoss = 0;
+    history = [];
+    document.getElementById('tanggal').valueAsDate = new Date();
+    document.getElementById('modalAwal').value = '';
+    document.getElementById('modal').value = '';
+    document.getElementById('target').value = '';
+    document.getElementById('targetLoss').value = '';
+    document.getElementById('nominal').value = '';
+    document.getElementById('persen').value = 10;
+    document.getElementById('resultDisplay').style.display = 'none';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').style.background = 'green';
+    document.getElementById('notifTarget').style.display = 'none';
+    updateChart();
+  }
+
+  function saveData() {
+    const record = {
+      tanggal: document.getElementById('tanggal').value,
+      modalAwal: document.getElementById('modalAwal').value,
+      modal: document.getElementById('modal').value,
+      target: document.getElementById('target').value,
+      targetLoss: document.getElementById('targetLoss').value,
+      nominal: document.getElementById('nominal').value,
+      persen: document.getElementById('persen').value,
+      totalProfit: totalProfit.toFixed(2),
+      totalLoss: totalLoss.toFixed(2),
+      net: (totalProfit - totalLoss).toFixed(2)
+    };
+    console.log("📥 Data disiapkan untuk dikirim:", record);
+    alert("✅ Data siap dikirim ke Spreadsheet (cek console log).");
+  }
+
+  function updateChart() {
+    chart.data.labels = history.map(h => h.label);
+    let runningTotal = 0;
+    chart.data.datasets[0].data = history.map(h => {
+      runningTotal += h.value;
+      return runningTotal;
+    });
+    chart.update();
+  }
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Growth',
+        data: [],
+        borderColor: '#007bff',
+        fill: false,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+</script>
+
+</body>
+</html>
